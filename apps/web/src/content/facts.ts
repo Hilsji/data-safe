@@ -17,6 +17,11 @@ export interface Fact {
   sources: SourceId[];
   status: "verified" | "check" | "todo";
   note?: string;
+  /** Werte für Diagramme – dieselben Zahlen wie in `value`, nie zusätzliche */
+  numbers?: readonly number[];
+  /** Beschriftung je Diagramm-Wert */
+  numberLabels?: readonly string[];
+  unit?: string;
 }
 
 export const FACTS = {
@@ -24,6 +29,9 @@ export const FACTS = {
     id: "D01",
     label: "Smartphone-Bildschirmzeit pro Tag, 12–13 J. bzw. 18–19 J.",
     value: "166 min bzw. 278 min",
+    numbers: [166, 278],
+    unit: "min",
+    numberLabels: ["12–13 Jahre", "18–19 Jahre"],
     sources: ["jim2025"],
     status: "check",
     note: "Arbeitspapier: im Text „Volljährige“, in Anhang A „18–19 J.“ – Altersangabe angleichen.",
@@ -32,6 +40,9 @@ export const FACTS = {
     id: "D02",
     label: "Riskante / pathologische Social-Media-Nutzung, 10–17 J.",
     value: "21,5 % / 6,6 %",
+    numbers: [21.5, 6.6],
+    unit: "%",
+    numberLabels: ["riskant", "pathologisch"],
     sources: ["dak2026"],
     status: "verified",
   },
@@ -61,6 +72,9 @@ export const FACTS = {
     id: "D06",
     label: "Test-Accounts von Jungen: Zeit bis zu toxischen / Manosphere-Inhalten",
     value: "≤ 23 min / ≤ 26 min",
+    numbers: [23, 26],
+    unit: "min",
+    numberLabels: ["toxische Inhalte", "Manosphere"],
     sources: ["dcu2024"],
     status: "check",
     note: "Arbeitspapier nennt die 23 min in der Zusammenfassung „misogyn“, in Tab. 5 „toxisch“. App verwendet „toxisch“.",
@@ -90,6 +104,9 @@ export const FACTS = {
     id: "D10",
     label: "Zeit, bis Parteivideos im TikTok-Feed auftauchen (Test-Accounts, 21–25 J.)",
     value: "11–12 min",
+    numbers: [11, 12],
+    unit: "min",
+    numberLabels: ["Parteivideos (von–bis)", ""],
     sources: ["potsdam2025"],
     status: "check",
     note: "Im Papier auf #afd bezogen. In der App neutral („Parteien an den Rändern häufiger ausgespielt“) – Beutelsbacher Konsens prüfen.",
@@ -120,6 +137,13 @@ export const FACTS = {
     label: "Metaanalyse Kurzvideo-Nutzung: Zusammenhang mit Aufmerksamkeit / Impulskontrolle",
     value: "r = −0,38 / r = −0,41 (71 Studien, 98.299 Personen, korrelativ)",
     sources: ["nguyen2025"],
+    status: "verified",
+  },
+  EU01: {
+    id: "EU01",
+    label: "EU-Kommission: vorläufige Feststellung zu TikTok (Digital Services Act)",
+    value: "Endlos-Scrollen, Autoplay, Push-Nachrichten und personalisierte Empfehlungen versetzen in einen „Autopilot-Modus“ – vorläufig, TikTok widerspricht",
+    sources: ["euCommission2026"],
     status: "verified",
   },
   N02: {

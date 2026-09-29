@@ -13,6 +13,11 @@ describe("Zahlen-Registry: jede Zahl mit Quelle", () => {
     if (fact.status === "check") expect("note" in fact && fact.note.length > 10).toBe(true);
   });
 
+  it.each(Object.values(FACTS).filter((f) => "numbers" in f))("$id: Diagramm-Werte stehen auch im Text", (fact) => {
+    const text = fact.value.replace(/,/g, ".");
+    for (const n of (fact as { numbers: readonly number[] }).numbers) expect(text).toContain(String(n));
+  });
+
   it("jede Quelle hat Jahr und Zitat; Quellen außerhalb des Arbeitspapiers sind gekennzeichnet", () => {
     for (const s of Object.values(SOURCES)) {
       expect(s.year).toBeGreaterThan(1900);
