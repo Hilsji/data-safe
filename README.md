@@ -22,7 +22,7 @@ npm run dev               # http://localhost:3000
 
 cd apps/worker
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]" numpy
+pip install -e ".[dev]"   # ffmpeg muss installiert sein
 python -m pytest -q
 ```
 
