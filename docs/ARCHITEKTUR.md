@@ -1,8 +1,38 @@
-# „Guide me on the right way.“ – Architekturplan & Datenmodell · v2
+# „Guide me on the right way.“ – Architekturplan & Datenmodell · v3
 
-> Status: **Entwurf v2 zur Freigabe.** v2 ersetzt den YouTube-Pool durch **echtes TikTok + Bildschirmaufnahme + serverseitige Auswertung**.
-> Die Entscheidungen aus Runde 1 sind eingearbeitet: Strato-ready, zunächst lokal · Magic Link · Nachrichten bleiben im Dashboard · Quiz-Struktur bleibt, der **Schwerpunkt liegt auf inhaltlichen Fragen**.
-> Punkte, die vor dem Bauen entschieden werden müssen, stehen in [Abschnitt 12](#12-entscheidungen-vor-dem-bau).
+> Status: **freigegeben mit den Änderungen aus Runde 3** (siehe Abschnitt „v3“ direkt hier drunter). Wo v3 und die Abschnitte 0–13 sich widersprechen, gilt v3.
+
+---
+
+## v3 – Entscheidungen aus Runde 3 (verbindlich)
+
+| Thema | Entscheidung | Umsetzung |
+|---|---|---|
+| **App-Wahl** | Freie Wahl: Man öffnet die Kurzvideo-App, die man selbst häufig nutzt, mit dem eigenen Account | Unterstützte Apps mit eigenen Layout-Profilen: **TikTok, Instagram Reels, YouTube Shorts, Snapchat Spotlight**. Andere Apps → Hinweis „wird noch nicht unterstützt“, die Segmentierung läuft dann nur generisch |
+| **Übertragung** | **Live** während des Scrollens | Einheitliche Ingest-Schnittstelle: verschlüsselte Chunks (2–10 s) per WebSocket/HTTP an `/api/ingest/:sessionId`. Clients: **Desktop-PWA** über `getDisplayMedia` + `MediaRecorder` (live). **iOS/Android: Eine Web-App kann den Bildschirm fremder Apps technisch nicht live mitschneiden.** Dafür braucht es eine kleine native Begleit-App: iOS über eine ReplayKit Broadcast Upload Extension, Android über MediaProjection. Verteilung ohne App Store per MDM an Schul-iPads. Fallback ohne Begleit-App: Systemaufnahme + Upload im Anschluss über dieselbe Schnittstelle → **siehe offene Frage F1** |
+| **Schwärzung** | Der Server deckt Nutzernamen und alle hochsensiblen Infos ab | Stufe 1 der Pipeline, **vor jeder weiteren Verarbeitung und vor jeder Speicherung** (Abschnitt v3.1) |
+| **Dauer** | **15, 30 oder 45 min** (nicht 60) | überall angepasst |
+| **Altersgrenze (E3)** | Wie vorgeschlagen: Scroll-Test ab 14 / Kl. 8, unter Aufsicht | 12–13 J.: Module 1–2 + Baseline-Spiel |
+| **Hardware (E4)** | Berichte werden **in der Folgestunde** abgerufen | Behaltensintervall = „bis zur Folgestunde“. Die tatsächliche Dauer in Stunden wird mitgespeichert und in der Auswertung genannt |
+| **Politik (E6)** | Freigabeschwelle wie vorgeschlagen | κ ≥ 0,6 (Mensch–Mensch und Mensch–Modell), Recall je Spektrum ≥ 0,7, Schieflage ≤ 0,15 |
+| **Name des Berichts** | Gewünscht war „Diagnose-Bericht“ | Er heißt in der App **„Dein Feed-Bericht“**. Grund: Die Regel „keine Diagnosen“ aus dem Auftrag und Kap. 12.1 des Arbeitspapiers („Keine Diagnosen“). Das Wort „Diagnose“ würde eine medizinische Einordnung nahelegen, die die App nicht leisten darf |
+
+### v3.1 Schwärzung („Redaction first“)
+Reihenfolge im Worker, pro eingehendem Chunk, alles nur im RAM:
+1. **Screen-Klassifikation pro Frame:** Feed · Kommentare · Profil · Suche · Posteingang/DM · Kamera/Aufnahme · Einstellungen · Fremde App/Home · Benachrichtigungs-Banner · Tastatur sichtbar.
+   → Es werden nur Frames der Klasse **Feed** weiterverarbeitet. **DM, Profil, Einstellungen, Kamera und fremde Apps werden verworfen**, bevor OCR oder Modell sie sehen. Gezählt wird nur *dass* und *wie lange* (z. B. „2 min außerhalb des Feeds“).
+2. **Banner und Statusleiste abdecken:** Die obere Systemleiste und Benachrichtigungs-Banner werden immer schwarz überdeckt (Uhrzeit, Nachrichtenvorschau, Netzbetreiber).
+3. **Nutzernamen:** OCR findet `@handle`-Muster und Anzeigenamen in den bekannten Layout-Zonen der jeweiligen App (Creator-Zeile, Erwähnungen). Diese Stellen werden **im Bild geschwärzt und im Text durch `@nutzer` ersetzt**.
+4. **Weitere PII im Text** (Einblendungen, Captions, Transkript): Telefonnummern, E-Mail-Adressen, IBAN, Adressen, Kfz-Kennzeichen, URLs mit Parametern → ersetzt durch Platzhalter. Umgesetzt per Regex und Prüfsummen (z. B. IBAN).
+5. **Gesichter:** Im Standbild für das Quiz bleiben Gesichter erhalten, weil sie zum Wiedererkennen nötig sind. Das Bild geht nur verschlüsselt an den Schüler selbst. Alle anderen Bilddaten werden verworfen.
+6. **Eigener Account:** Den Namen des eigenen Accounts bekommt der Server nie in Klartext. Profil-Screens werden verworfen (Punkt 1), und Handles, die in ≥ 30 % der Feed-Frames an derselben Stelle stehen (typisch: das eigene Profilbild bzw. der eigene Name), werden zusätzlich geschwärzt.
+7. **Audit:** Unit-Tests mit synthetischen Frames, die DMs, Banner und Handles enthalten, prüfen, dass nichts davon in `AnalysisResult` landet.
+
+### v3.2 Offene Frage
+**F1 – Live-Übertragung auf iPad/Android:** Eine PWA kann das nicht. Optionen:
+- **(a)** Native Begleit-App „Guide-Recorder“ (Capacitor + ReplayKit-Extension bzw. MediaProjection), verteilt per MDM der Schule. Echt live, aber zusätzlicher Entwicklungs- und Verteilungsaufwand.
+- **(b)** Live nur am Laptop. Auf Tablet und Handy nimmt die Systemaufnahme auf, und der Upload folgt direkt danach. Weil die Berichte ohnehin erst in der Folgestunde kommen, ist der Unterschied für Schüler gering.
+- **Empfehlung:** Zuerst (b) bauen. Die Ingest-Schnittstelle ist so ausgelegt, dass (a) später ohne Änderungen am Server dazukommt.
 
 ---
 
@@ -24,7 +54,7 @@
 Der neue Ablauf verträgt sich nicht mit zwei Regeln aus dem Auftrag und einem Leitprinzip des eigenen Arbeitspapiers:
 
 - *„Keine Übertragung individueller Verhaltens- oder Politikdaten.“* Eine Bildschirmaufnahme **ist** ein individueller Verhaltensdatensatz. Die Politik-Klassifikation (Art. 9 DSGVO) findet dann auf einem Rechner statt, nicht im Browser.
-- *„Personenbezogene Auswertungen nur lokal im Browser.“* Eine 15–60-minütige Aufnahme lässt sich auf einem Schul-iPad nicht per OCR, Spracherkennung und Klassifikation im Browser verarbeiten.
+- *„Personenbezogene Auswertungen nur lokal im Browser.“* Eine 15–45-minütige Aufnahme lässt sich auf einem Schul-iPad nicht per OCR, Spracherkennung und Klassifikation im Browser verarbeiten.
 - Arbeitspapier, Kap. 12.1: *„Verarbeitung möglichst auf dem Gerät; keine Übertragung von Inhalten an Server.“*
 
 **Vorschlag: „So nah am Gerät wie möglich, so kurz wie möglich, danach unlesbar für alle außer dem Schüler.“**
@@ -55,7 +85,7 @@ sequenceDiagram
   S->>B: Session anmelden (Dauer, öffentlicher Schlüssel, Klassen-Code)
   S->>OS: Anleitung: „Nicht stören“ an → Bildschirmaufnahme starten
   S->>TT: Weiterleitung zu TikTok (App oder Web)
-  Note over TT: 15 / 30 / 60 min scrollen<br/>Ende-Signal: Web-Push + Countdown der Lehrkraft
+  Note over TT: 15 / 30 / 45 min scrollen<br/>Ende-Signal: Web-Push + Countdown der Lehrkraft
   OS-->>S: Aufnahme stoppen, zurück zur App
   S->>B: Aufnahme hochladen (in Teilen, fortsetzbar)
   S->>S: Wartezeit = Module 1 & 2 (Daten-Story, Vergleichs-Falle)
@@ -74,7 +104,7 @@ sequenceDiagram
 | **Android** | Systemeigener Bildschirmrekorder (ab Android 11, Schnelleinstellungen), herstellerabhängig | Datei aus „Galerie“ auswählen |
 | **Laptop (Chrome/Edge/Firefox)** | `getDisplayMedia` direkt aus der PWA: Der Schüler teilt den TikTok-Tab, die App nimmt mit `MediaRecorder` auf | automatisch, fortlaufend in Teilen |
 
-**Upload-Volumen:** Eine 60-Minuten-Aufnahme auf dem iPad hat grob 2–5 GB. Bei 25 Schülern im WLAN ist das kritisch. Vorgesehen ist deshalb eine **Vorverarbeitung im Browser, wo möglich** (WebCodecs: 2 Bilder/s in 540p + Audio als Opus). Das reduziert die Datenmenge auf ~5 %. Als Fallback wird die Originaldatei per `tus` (fortsetzbarer Upload) übertragen. Welche Variante auf Schul-iPads trägt, klärt Spike S1.
+**Upload-Volumen:** Eine 45-Minuten-Aufnahme auf dem iPad hat grob 1,5–4 GB (Schätzung, Spike S1 misst). Bei 25 Schülern im WLAN ist das kritisch. Vorgesehen ist deshalb eine **Vorverarbeitung im Browser, wo möglich** (WebCodecs: 2 Bilder/s in 540p + Audio als Opus). Das reduziert die Datenmenge auf ~5 %. Als Fallback wird die Originaldatei per `tus` (fortsetzbarer Upload) übertragen. Welche Variante auf Schul-iPads trägt, klärt Spike S1.
 
 ### 2.2 Ende-Signal
 Die PWA läuft im Hintergrund, während TikTok im Vordergrund ist. Das Ende kommt deshalb (a) im Klassenmodus über einen **großen Countdown der Lehrkraft** am Beamer und (b) über eine **Web-Push-Benachrichtigung** vom Server. Das funktioniert auf iOS nur, wenn die PWA zum Home-Bildschirm hinzugefügt wurde (ab iOS 16.4). Die Pipeline schneidet die Aufnahme ohnehin auf die gewählte Dauer zu, damit Sessions vergleichbar bleiben.
@@ -138,7 +168,7 @@ flowchart LR
 interface ArenaSession {
   _id: string;                        // = retrievalId (siehe 5.2), kein Name
   publicKey: string;                  // X25519, base64 – zum Verschlüsseln des Ergebnisses
-  durationMin: 15 | 30 | 60;
+  durationMin: 15 | 30 | 45;
   classSessionId?: string;            // falls im Klassenmodus
   groupId?: "A" | "B" | "C";
   consents: {
@@ -179,7 +209,7 @@ interface ClassSession {
   _id: string;
   joinCode: string;                   // 6 Zeichen
   teacherUserId: string;              // Magic-Link-Konto der Lehrkraft
-  groups: { id: "A" | "B" | "C"; label: string; durationMin: 15 | 30 | 60 }[];
+  groups: { id: "A" | "B" | "C"; label: string; durationMin: 15 | 30 | 45 }[];
   guardianConsentConfirmed: boolean;
   retentionIntervalMin: number;       // festes Intervall bis zum Quiz (Default 30)
   state: "open" | "running" | "closed";
@@ -303,13 +333,13 @@ interface ContentQuestion {
 | 6 Quiz | siehe Abschnitt 7 | `QuizDefinition` | Beleg-Prüfung, Längen-Bias-Check der Antwortoptionen |
 | 7 Abschluss | Ergebnis verschlüsseln → speichern → **Rohdaten und tmpfs löschen** → Job `done` | `EncryptedBlob` | Test: Nach `done` existieren keine Dateien mehr |
 
-**Laufzeit:** Auf einem Laptop ohne GPU schätze ich 15 min Aufnahme → 5–15 min Verarbeitung und 60 min → 30–90 min. Das ist eine **ungeprüfte Annahme**, Spike S2 misst sie. Eine Klasse mit 25 Schülern braucht wahrscheinlich eine GPU in der Schul-Box oder ein Quiz erst in der Folgestunde. → Das wird zu E4.
+**Laufzeit:** Auf einem Laptop ohne GPU schätze ich 15 min Aufnahme → 5–15 min Verarbeitung und 45 min → 25–70 min. Das ist eine **ungeprüfte Annahme**, Spike S2 misst sie. Eine Klasse mit 25 Schülern braucht wahrscheinlich eine GPU in der Schul-Box oder ein Quiz erst in der Folgestunde. → Das wird zu E4.
 
 ---
 
 ## 7. Quiz (Schwerpunkt: Inhalt)
 
-**Feste Anzahl, gleich für 15, 30 und 60 min** (wie freigegeben, jetzt mit Inhalt als Kern):
+**Feste Anzahl, gleich für 15, 30 und 45 min** (wie freigegeben, jetzt mit Inhalt als Kern):
 
 | Teil | Anzahl | Ziehung |
 |---|---|---|
@@ -366,7 +396,7 @@ interface ContentQuestion {
 ## 11. Tests & Spikes
 
 **Spikes vor dem eigentlichen Bau (je 1–2 Tage):**
-- **S1 Aufnahme & Upload:** iPad-Systemaufnahme → Datei-Upload in der PWA; Dateigröße für 15/30/60 min; Vorverarbeitung per WebCodecs auf dem iPad möglich? Kommt TikTok-Ton mit in die Aufnahme?
+- **S1 Aufnahme & Upload:** iPad-Systemaufnahme → Datei-Upload in der PWA; Dateigröße für 15/30/45 min; Vorverarbeitung per WebCodecs auf dem iPad möglich? Kommt TikTok-Ton mit in die Aufnahme?
 - **S2 Pipeline-Machbarkeit:** 3 Kalibrieraufnahmen (Test-Account des Projektteams). Gemessen werden Segmentierungs-F1, Like/Loop-Erkennung und die Laufzeit CPU vs. GPU.
 - **S3 TikTok-Zugang:** Web ohne Login (tiktok.com/foryou) vs. App mit neuem Test-Account vs. eigener Account. Was sehen Schüler ohne Login, und wie lange?
 

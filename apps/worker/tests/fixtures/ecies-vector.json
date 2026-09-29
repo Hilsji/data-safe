@@ -1,0 +1,11 @@
+{
+  "displayId": "000G-40R4-0M30-E209-185G-R38E-1W",
+  "retrievalId": "W41X2EWF14HPECXH",
+  "plaintext": "{\"hinweis\":\"Testvektor – Ergebnis nur für die Unique ID lesbar\",\"ümlaut\":\"äöü\"}",
+  "blob": {
+    "schemaVersion": 1,
+    "ephemeralPublicKey": "B6r/Pp/BZydVRPTDpqF82Dfy7G54zYpXsePfs8wDWnY=",
+    "iv": "AAAAAAAAAAAAAAAA",
+    "ciphertext": "LlOF3dQ/TehqI6GkYM4U2mJnMr4S2ReeWAyIQllQwDJDzUTvFg7RiLvcIfTp9iqpAA1TpJD5U84ib9h29iyGDQ4bBbOKvQv3UiLE5+yk4qxk1ikG9eYLFz0SbxHqUrSFUV5dgr1e"
+  }
+}
