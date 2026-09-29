@@ -10,5 +10,7 @@ __pycache__/
 .venv/
 *.pyc
 .pytest_cache/
-/data/
+data/
 *.egg-info/
+test-results/
+playwright-report/

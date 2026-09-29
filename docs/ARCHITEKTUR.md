@@ -9,7 +9,7 @@
 | Thema | Entscheidung | Umsetzung |
 |---|---|---|
 | **App-Wahl** | Freie Wahl: Man öffnet die Kurzvideo-App, die man selbst häufig nutzt, mit dem eigenen Account | Unterstützte Apps mit eigenen Layout-Profilen: **TikTok, Instagram Reels, YouTube Shorts, Snapchat Spotlight**. Andere Apps → Hinweis „wird noch nicht unterstützt“, die Segmentierung läuft dann nur generisch |
-| **Übertragung** | **Live** während des Scrollens | Einheitliche Ingest-Schnittstelle: verschlüsselte Chunks (2–10 s) per WebSocket/HTTP an `/api/ingest/:sessionId`. Clients: **Desktop-PWA** über `getDisplayMedia` + `MediaRecorder` (live). **iOS/Android: Eine Web-App kann den Bildschirm fremder Apps technisch nicht live mitschneiden.** Dafür braucht es eine kleine native Begleit-App: iOS über eine ReplayKit Broadcast Upload Extension, Android über MediaProjection. Verteilung ohne App Store per MDM an Schul-iPads. Fallback ohne Begleit-App: Systemaufnahme + Upload im Anschluss über dieselbe Schnittstelle → **siehe offene Frage F1** |
+| **Übertragung** | ~~Live~~ → **F1 = b**: Aufnahme, danach Upload (Laptop: fortlaufend) | Einheitliche Upload-Schnittstelle `/api/arena/:id/upload` (in Teilen, fortsetzbar). Details in v3.2 |
 | **Schwärzung** | Der Server deckt Nutzernamen und alle hochsensiblen Infos ab | Stufe 1 der Pipeline, **vor jeder weiteren Verarbeitung und vor jeder Speicherung** (Abschnitt v3.1) |
 | **Dauer** | **15, 30 oder 45 min** (nicht 60) | überall angepasst |
 | **Altersgrenze (E3)** | Wie vorgeschlagen: Scroll-Test ab 14 / Kl. 8, unter Aufsicht | 12–13 J.: Module 1–2 + Baseline-Spiel |
@@ -28,11 +28,10 @@ Reihenfolge im Worker, pro eingehendem Chunk, alles nur im RAM:
 6. **Eigener Account:** Den Namen des eigenen Accounts bekommt der Server nie in Klartext. Profil-Screens werden verworfen (Punkt 1), und Handles, die in ≥ 30 % der Feed-Frames an derselben Stelle stehen (typisch: das eigene Profilbild bzw. der eigene Name), werden zusätzlich geschwärzt.
 7. **Audit:** Unit-Tests mit synthetischen Frames, die DMs, Banner und Handles enthalten, prüfen, dass nichts davon in `AnalysisResult` landet.
 
-### v3.2 Offene Frage
-**F1 – Live-Übertragung auf iPad/Android:** Eine PWA kann das nicht. Optionen:
-- **(a)** Native Begleit-App „Guide-Recorder“ (Capacitor + ReplayKit-Extension bzw. MediaProjection), verteilt per MDM der Schule. Echt live, aber zusätzlicher Entwicklungs- und Verteilungsaufwand.
-- **(b)** Live nur am Laptop. Auf Tablet und Handy nimmt die Systemaufnahme auf, und der Upload folgt direkt danach. Weil die Berichte ohnehin erst in der Folgestunde kommen, ist der Unterschied für Schüler gering.
-- **Empfehlung:** Zuerst (b) bauen. Die Ingest-Schnittstelle ist so ausgelegt, dass (a) später ohne Änderungen am Server dazukommt.
+### v3.2 Entschieden: Aufnahme und Upload (F1 = b)
+- **iPad/Android:** Systemeigene Bildschirmaufnahme → nach dem Scrollen **Upload in Teilen** (fortsetzbar) über die PWA.
+- **Laptop:** Aufnahme direkt in der PWA (`getDisplayMedia` + `MediaRecorder`). Die Teile werden schon während der Aufnahme hochgeladen.
+- Beide Wege nutzen dieselbe Schnittstelle (`/api/arena/:id/upload`). Eine native Begleit-App (Option a) kann später ohne Änderungen am Server dazukommen.
 
 ---
 
