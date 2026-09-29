@@ -27,6 +27,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main id="main" className="mx-auto max-w-2xl px-4 py-8">
           {children}
         </main>
+        <footer className="mx-auto max-w-2xl px-4 pb-8 text-sm" style={{ color: "var(--muted)" }}>
+          <Link href="/datenschutz" className="underline">
+            Datenschutz
+          </Link>
+        </footer>
       </body>
     </html>
   );
