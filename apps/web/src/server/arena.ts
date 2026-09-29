@@ -87,6 +87,9 @@ export async function registerArena(deps: ArenaDeps, raw: unknown): Promise<void
   if (input.classCode) {
     const cls = await deps.store.getClassByCode(input.classCode);
     if (!cls || cls.state === "closed") throw new ArenaError(404, "class", "Klassen-Code nicht gefunden.");
+    if (!cls.groups.some((g) => g.durationMin === input.durationMin)) {
+      throw new ArenaError(400, "duration", "Diese Dauer gibt es in deiner Klassen-Session nicht.");
+    }
     classSessionId = cls._id;
     guardianConfirmed = cls.guardianConsentConfirmed;
   }

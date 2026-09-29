@@ -8,6 +8,9 @@ import type { QuizScore } from "@/engine/quizScoring";
 import type { AnalysisResult } from "@/engine/types";
 import { de, fmt } from "@/i18n/de";
 import { loadRounds, saveRound, type SavedRound } from "@/lib/savedRounds";
+import { buildContribution } from "@/engine/aggregate";
+import { ApiError, contributeToClass } from "@/lib/arenaClient";
+import type { ClientState } from "@/lib/clientState";
 import { Alert, Button, Card, StepHeading } from "@/components/ui";
 import { Bars, LineChart, RadarChart, SplitBar } from "@/components/charts/Charts";
 
@@ -23,6 +26,7 @@ export function FeedReport({
   score,
   baselineDPrime,
   quizTakenAt,
+  classContribution,
   onDelete,
 }: {
   result: AnalysisResult;
@@ -30,6 +34,7 @@ export function FeedReport({
   baselineDPrime: number | null;
   /** Zeitpunkt des Quiz (ms) – Behaltensintervall = Aufnahmeende bis Quiz */
   quizTakenAt: number;
+  classContribution: ClientState["classContribution"];
   onDelete: () => Promise<void>;
 }) {
   const bubble = useMemo(() => buildBubbleProfile(result.segments), [result]);
@@ -38,6 +43,7 @@ export function FeedReport({
   const [usual, setUsual] = useState("");
   const [saved, setSaved] = useState(false);
   const [history, setHistory] = useState<SavedRound[]>(() => loadRounds());
+  const [contribState, setContribState] = useState<"idle" | "busy" | "done" | string>("idle");
 
   const videos = result.segments.length;
   const minutes = Math.round(result.meta.analyzedSec / 60);
@@ -250,6 +256,32 @@ export function FeedReport({
           )}
         </div>
       </section>
+
+      {classContribution && (
+        <Card className="space-y-2">
+          <h2 className="text-lg font-semibold">{t.contributeHeading}</h2>
+          <p>{t.contributeBody}</p>
+          {contribState === "done" ? (
+            <Alert tone="success">{t.contributed}</Alert>
+          ) : (
+            <Button
+              disabled={contribState === "busy"}
+              onClick={async () => {
+                setContribState("busy");
+                try {
+                  await contributeToClass(buildContribution({ token: classContribution.token, durationMin: classContribution.durationMin, score, bubble }));
+                  setContribState("done");
+                } catch (e) {
+                  setContribState(e instanceof ApiError ? e.message : de.arena.errors.network);
+                }
+              }}
+            >
+              {t.contribute}
+            </Button>
+          )}
+          {!["idle", "busy", "done"].includes(contribState) && <Alert tone="error">{contribState}</Alert>}
+        </Card>
+      )}
 
       <Button variant="danger" onClick={onDelete}>
         {de.report.deleteReport}

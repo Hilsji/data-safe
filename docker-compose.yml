@@ -12,6 +12,8 @@ services:
     environment:
       MONGODB_URI: mongodb://mongo:27017
       UPLOAD_DIR: /data/uploads
+      # Magic-Link-Mails: lokal an Mailpit (http://localhost:8025), auf Strato per SMTP_URL in .env überschreiben
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
     volumes:
       - uploads:/data/uploads
     ports:

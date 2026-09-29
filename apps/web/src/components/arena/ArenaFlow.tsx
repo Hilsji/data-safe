@@ -7,7 +7,8 @@ import { fromB64, toB64 } from "@/crypto/ecies";
 import { DURATIONS, SOURCE_APPS, type DurationMin, type SourceApp } from "@/engine/types";
 import type { SdtResult } from "@/engine/sdt";
 import { de, fmt } from "@/i18n/de";
-import { ApiError, getStatus, register, saveClientState, uploadFile } from "@/lib/arenaClient";
+import { ApiError, getStatus, joinClass, register, saveClientState, uploadFile } from "@/lib/arenaClient";
+import type { JoinResult } from "@/server/classes";
 import { INTENTION_WORDS_DE, normalizeAnswer, type ClientState } from "@/lib/clientState";
 import { Alert, Button, Card, Check, Choice, Progress, StepHeading } from "@/components/ui";
 import { Baseline } from "./Baseline";
@@ -25,6 +26,8 @@ interface FlowState {
   consentAnalysis: boolean;
   consentPolitics: boolean;
   classCode: string;
+  /** Ergebnis des Klassen-Beitritts: Gruppe gibt die Dauer vor; Token für den späteren anonymen Beitrag */
+  classJoin: JoinResult | null;
   /** base64 – nur in sessionStorage dieses Tabs, gelöscht nach dem Upload */
   seed: string | null;
   idConfirmed: boolean;
@@ -61,6 +64,7 @@ function initialState(): FlowState {
     consentAnalysis: false,
     consentPolitics: false,
     classCode: "",
+    classJoin: null,
     seed: null,
     idConfirmed: false,
     baselineSeed: rnd[0]!,
@@ -150,6 +154,7 @@ export function ArenaFlow() {
     v: 1,
     createdAt: new Date().toISOString(),
     durationMin: s.durationMin!,
+    classContribution: s.classJoin ? { token: s.classJoin.contributionToken, durationMin: s.classJoin.durationMin } : null,
     app: s.app!,
     baseline: s.baseline ? { dPrime: s.baseline.dPrime, hitRate: s.baseline.hitRate, falseAlarmRate: s.baseline.falseAlarmRate } : null,
     prospective: {
@@ -253,7 +258,7 @@ export function ArenaFlow() {
             <span className="mb-1 block font-semibold">{s.ageBand === "14-15" ? t.consent.classCodeLabel : t.consent.classCodeOptional}</span>
             <input
               value={s.classCode}
-              onChange={(e) => update({ classCode: e.target.value.toUpperCase().slice(0, 6) })}
+              onChange={(e) => update({ classCode: e.target.value.toUpperCase().slice(0, 6), classJoin: null })}
               autoComplete="off"
               autoCapitalize="characters"
               inputMode="text"
@@ -266,8 +271,33 @@ export function ArenaFlow() {
               {de.common.back}
             </Button>
             <Button
-              disabled={!s.consentAnalysis || (s.ageBand === "14-15" && s.classCode.length !== 6)}
-              onClick={() => update({ step: 2, seed: s.seed ?? toB64(createIdentity().seed) })}
+              disabled={busy || !s.consentAnalysis || (s.ageBand === "14-15" && s.classCode.length !== 6)}
+              onClick={async () => {
+                const code = s.classCode.trim().toUpperCase();
+                let classJoin = s.classJoin;
+                if (code && classJoin === null) {
+                  setBusy(true);
+                  setError(null);
+                  try {
+                    classJoin = await joinClass(code);
+                  } catch (e) {
+                    setError(e instanceof ApiError ? e.message : t.errors.network);
+                    return;
+                  } finally {
+                    setBusy(false);
+                  }
+                  if (s.ageBand === "14-15" && !classJoin.guardianConsentConfirmed) {
+                    setError(t.consent.guardianMissing);
+                    return;
+                  }
+                }
+                update({
+                  step: 2,
+                  seed: s.seed ?? toB64(createIdentity().seed),
+                  classJoin,
+                  durationMin: classJoin ? classJoin.durationMin : s.durationMin,
+                });
+              }}
             >
               {de.common.next}
             </Button>
@@ -309,13 +339,22 @@ export function ArenaFlow() {
         <section className="space-y-6">
           <StepHeading>{t.setup.heading}</StepHeading>
           <Alert tone="success">{t.baseline.done}</Alert>
-          <Choice
-            legend={t.setup.durationLabel}
-            name="duration"
-            value={s.durationMin}
-            onChange={(v) => update({ durationMin: v })}
-            options={DURATIONS.map((d) => ({ value: d, label: `${d} ${de.common.minutes}` }))}
-          />
+          {s.classJoin ? (
+            <Card>
+              <p>{fmt(t.setup.classGroup, { title: s.classJoin.classTitle, group: s.classJoin.groupLabel, min: s.classJoin.durationMin })}</p>
+              <p className="text-sm" style={{ color: "var(--muted)" }}>
+                {fmt(t.setup.pseudonym, { name: s.classJoin.pseudonym })}
+              </p>
+            </Card>
+          ) : (
+            <Choice
+              legend={t.setup.durationLabel}
+              name="duration"
+              value={s.durationMin}
+              onChange={(v) => update({ durationMin: v })}
+              options={DURATIONS.map((d) => ({ value: d, label: `${d} ${de.common.minutes}` }))}
+            />
+          )}
           <Choice
             legend={t.setup.appLabel}
             name="app"

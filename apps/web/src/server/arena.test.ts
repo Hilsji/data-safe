@@ -3,10 +3,14 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendChunk, ArenaError, completeUpload, deleteArena, getStatus, initUpload, registerArena, uploadStatus, type ArenaDeps } from "./arena";
-import { MemoryStore } from "./store";
+import { MemoryStore, type ClassSessionDoc } from "./store";
 import type { ServerConfig } from "./config";
 import { createIdentity } from "@/crypto/uniqueId";
 import { toB64 } from "@/crypto/ecies";
+
+function classDoc(p: Pick<ClassSessionDoc, "_id" | "joinCode" | "guardianConsentConfirmed" | "retentionMin" | "reportsReleasedAt" | "state" | "expiresAt">): ClassSessionDoc {
+  return { teacherId: "t", title: "Test", groups: [{ id: "A", label: "A", durationMin: 15 }], startedAt: null, joinCount: 0, createdAt: new Date(), ...p };
+}
 
 let dir: string;
 let store: MemoryStore;
@@ -71,9 +75,9 @@ describe("registerArena", () => {
 
   it("verlangt unter 16 eine Klasse mit bestätigter Einwilligung der Sorgeberechtigten", async () => {
     await expectArenaError(registerArena(deps, registration({ ageBand: "14-15" }).body), 403, "guardian");
-    store.classes.set("c1", { _id: "c1", joinCode: "ABC123", guardianConsentConfirmed: false, retentionMin: null, reportsReleasedAt: null, state: "open", expiresAt: now });
+    store.classes.set("c1", classDoc({ _id: "c1", joinCode: "ABC123", guardianConsentConfirmed: false, retentionMin: null, reportsReleasedAt: null, state: "open", expiresAt: now }));
     await expectArenaError(registerArena(deps, registration({ ageBand: "14-15", classCode: "ABC123" }).body), 403, "guardian");
-    store.classes.set("c2", { _id: "c2", joinCode: "XYZ789", guardianConsentConfirmed: true, retentionMin: null, reportsReleasedAt: null, state: "open", expiresAt: now });
+    store.classes.set("c2", classDoc({ _id: "c2", joinCode: "XYZ789", guardianConsentConfirmed: true, retentionMin: null, reportsReleasedAt: null, state: "open", expiresAt: now }));
     await registerArena(deps, registration({ ageBand: "14-15", classCode: "XYZ789" }).body);
   });
 
@@ -192,7 +196,7 @@ describe("Status und Löschen", () => {
   });
 
   it("gibt den Bericht früher heraus, wenn die Lehrkraft freigibt", async () => {
-    store.classes.set("c", { _id: "c", joinCode: "KMS234", guardianConsentConfirmed: true, retentionMin: 24 * 60, reportsReleasedAt: null, state: "open", expiresAt: now });
+    store.classes.set("c", classDoc({ _id: "c", joinCode: "KMS234", guardianConsentConfirmed: true, retentionMin: 24 * 60, reportsReleasedAt: null, state: "open", expiresAt: now }));
     const r = registration({ classCode: "KMS234" });
     await registerArena(deps, r.body);
     const id = r.id.retrievalId;

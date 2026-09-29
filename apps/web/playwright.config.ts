@@ -14,6 +14,6 @@ export default defineConfig({
     port,
     reuseExistingServer: true,
     timeout: 120_000,
-    env: { UPLOAD_DIR: "./data/e2e-uploads", ENABLE_TEST_ROUTES: "1" },
+    env: { UPLOAD_DIR: "./data/e2e-uploads", ENABLE_TEST_ROUTES: "1", RATE_LIMIT_FACTOR: "50", TEACHER_EMAIL_DOMAINS: "schule.example", APP_URL: `http://localhost:${port}` },
   },
 });

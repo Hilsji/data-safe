@@ -7,6 +7,8 @@ export interface ClientState {
   durationMin: DurationMin;
   app: SourceApp;
   baseline: { dPrime: number; hitRate: number; falseAlarmRate: number } | null;
+  /** nur im Klassenmodus: anonymer Einmal-Token für den Beitrag zur Klassen-Auswertung */
+  classContribution?: { token: string; durationMin: DurationMin } | null;
   prospective: {
     kind: "word_at_end";
     word: string;

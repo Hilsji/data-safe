@@ -5,6 +5,8 @@ import { encryptJson, toB64, type EncryptedBlob } from "@/crypto/ecies";
 import type { UniqueIdentity } from "@/crypto/uniqueId";
 import type { DurationMin, SourceApp } from "@/engine/types";
 import type { PublicStatus } from "@/server/arena";
+import type { JoinResult } from "@/server/classes";
+import type { Contribution } from "@/engine/aggregate";
 import type { ClientState } from "./clientState";
 
 export class ApiError extends Error {
@@ -59,6 +61,14 @@ export async function saveClientState(identity: UniqueIdentity, state: ClientSta
 
 export function getStatus(retrievalId: string): Promise<PublicStatus & { clientState: EncryptedBlob | null }> {
   return call(`/api/arena/${retrievalId}`);
+}
+
+export function joinClass(code: string): Promise<JoinResult> {
+  return call("/api/class/join", json("POST", { code }));
+}
+
+export function contributeToClass(contribution: Contribution): Promise<void> {
+  return call("/api/class/contribute", json("POST", contribution));
 }
 
 export function deleteAll(retrievalId: string): Promise<void> {

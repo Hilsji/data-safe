@@ -103,6 +103,7 @@ export function ReportFlow() {
         score={state.score}
         baselineDPrime={state.client?.baseline?.dPrime ?? null}
         quizTakenAt={state.takenAt}
+        classContribution={state.client?.classContribution ?? null}
         onDelete={() => remove(state.identity)}
       />
     );

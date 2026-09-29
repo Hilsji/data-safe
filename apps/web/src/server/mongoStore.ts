@@ -1,5 +1,17 @@
 import { MongoClient, type Db } from "mongodb";
-import type { ArenaSessionDoc, ClassSessionDoc, JobDoc, Store } from "./store";
+import type {
+  ArenaSessionDoc,
+  ClassAggregateDoc,
+  ClassGroup,
+  ClassSessionDoc,
+  ContributionTokenDoc,
+  JobDoc,
+  LoginTokenDoc,
+  ParticipantDoc,
+  Store,
+  UserSessionDoc,
+} from "./store";
+import { emptyAggregate } from "./store";
 
 /** MongoDB-Implementierung. TTL-Indizes löschen abgelaufene Dokumente automatisch. */
 export class MongoStore implements Store {
@@ -22,6 +34,21 @@ export class MongoStore implements Store {
   private get classes() {
     return this.db.collection<ClassSessionDoc>("classSessions");
   }
+  private get participants() {
+    return this.db.collection<ParticipantDoc>("classParticipants");
+  }
+  private get tokens() {
+    return this.db.collection<ContributionTokenDoc>("contributionTokens");
+  }
+  private get aggregates() {
+    return this.db.collection<ClassAggregateDoc>("classAggregates");
+  }
+  private get loginTokens() {
+    return this.db.collection<LoginTokenDoc>("loginTokens");
+  }
+  private get sessions() {
+    return this.db.collection<UserSessionDoc>("userSessions");
+  }
 
   async ensureIndexes() {
     await Promise.all([
@@ -31,6 +58,13 @@ export class MongoStore implements Store {
       this.jobs.createIndex({ arenaSessionId: 1 }),
       this.classes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.classes.createIndex({ joinCode: 1 }, { unique: true }),
+      this.classes.createIndex({ teacherId: 1 }),
+      this.arenas.createIndex({ classSessionId: 1 }),
+      ...["classParticipants", "contributionTokens", "classAggregates", "loginTokens", "userSessions"].map((name) =>
+        this.db.collection(name).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      ),
+      this.participants.createIndex({ classId: 1 }),
+      this.aggregates.createIndex({ classId: 1 }),
     ]);
   }
 
@@ -63,5 +97,78 @@ export class MongoStore implements Store {
   }
   getClass(id: string) {
     return this.classes.findOne({ _id: id });
+  }
+  async insertClass(doc: ClassSessionDoc) {
+    try {
+      await this.classes.insertOne(doc);
+      return "ok" as const;
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) return "exists" as const;
+      throw e;
+    }
+  }
+  async updateClass(id: string, patch: Partial<ClassSessionDoc>) {
+    await this.classes.updateOne({ _id: id }, { $set: patch });
+  }
+  async nextJoinIndex(classId: string) {
+    const before = await this.classes.findOneAndUpdate({ _id: classId }, { $inc: { joinCount: 1 } }, { returnDocument: "before" });
+    return before ? (before.joinCount ?? 0) : null;
+  }
+  listClasses(teacherId: string) {
+    return this.classes.find({ teacherId }).sort({ createdAt: -1 }).toArray();
+  }
+  async deleteClass(id: string) {
+    await Promise.all([
+      this.classes.deleteOne({ _id: id }),
+      this.participants.deleteMany({ classId: id }),
+      this.tokens.deleteMany({ classId: id }),
+      this.aggregates.deleteMany({ classId: id }),
+      this.arenas.updateMany({ classSessionId: id }, { $set: { classSessionId: null } }),
+    ]);
+  }
+  async insertParticipant(doc: ParticipantDoc) {
+    await this.participants.insertOne(doc);
+  }
+  listParticipants(classId: string) {
+    return this.participants.find({ classId }).toArray();
+  }
+  async insertContributionToken(doc: ContributionTokenDoc) {
+    await this.tokens.insertOne(doc);
+  }
+  consumeContributionToken(hash: string) {
+    return this.tokens.findOneAndDelete({ _id: hash });
+  }
+  async incAggregate(key: { classId: string; groupId: ClassGroup["id"] }, inc: Record<string, number>, expiresAt: Date) {
+    const _id = `${key.classId}:${key.groupId}`;
+    // Dokument mit festen Arrays anlegen, falls es fehlt – danach nur noch $inc
+    const init: Partial<ClassAggregateDoc> = emptyAggregate(key.classId, key.groupId, expiresAt);
+    delete init._id;
+    await this.aggregates.updateOne({ _id }, { $setOnInsert: init }, { upsert: true });
+    await this.aggregates.updateOne({ _id }, { $inc: inc });
+  }
+  getAggregates(classId: string) {
+    return this.aggregates.find({ classId }).toArray();
+  }
+  async countArenasByStatus(classId: string) {
+    const rows = await this.arenas.aggregate<{ _id: string; n: number }>([
+      { $match: { classSessionId: classId } },
+      { $group: { _id: "$status", n: { $sum: 1 } } },
+    ]).toArray();
+    return Object.fromEntries(rows.map((r) => [r._id, r.n]));
+  }
+  async insertLoginToken(doc: LoginTokenDoc) {
+    await this.loginTokens.insertOne(doc);
+  }
+  consumeLoginToken(hash: string) {
+    return this.loginTokens.findOneAndDelete({ _id: hash, expiresAt: { $gt: new Date() } });
+  }
+  async insertUserSession(doc: UserSessionDoc) {
+    await this.sessions.insertOne(doc);
+  }
+  getUserSession(hash: string) {
+    return this.sessions.findOne({ _id: hash, expiresAt: { $gt: new Date() } });
+  }
+  async deleteUserSession(hash: string) {
+    await this.sessions.deleteOne({ _id: hash });
   }
 }
