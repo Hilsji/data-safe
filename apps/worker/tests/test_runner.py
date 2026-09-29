@@ -27,6 +27,10 @@ class FakeRepo:
         self.job = {"_id": "j1", "arenaSessionId": IDENT.retrieval_id, "uploadPath": upload_path, "state": "queued", "attempts": attempts}
         self.progress: list[float] = []
         self.deleted = False
+        self.approved_model: str | None = "fake"
+
+    def approved_politics_model(self):
+        return self.approved_model
 
     def claim_job(self, lock_seconds):
         if self.job["state"] != "queued":
@@ -115,6 +119,17 @@ def test_deleted_session_saves_nothing(tmp_path):
     assert run_once(repo, engines, frame_reader=reader) == "gone"
     assert "result" not in repo.arena
     assert not Path(path).exists()
+
+
+def test_politics_spectrum_needs_consent_and_approved_model(tmp_path):
+    engines, reader = engines_and_reader()
+    for consent, approved, expected in [(True, "fake", True), (True, "anderes-modell", False), (True, None, False), (False, "fake", False)]:
+        repo = FakeRepo(upload(tmp_path))
+        repo.arena["consents"]["politicsSpectrum"] = consent
+        repo.approved_model = approved
+        assert run_once(repo, engines, frame_reader=reader) == "done"
+        result = json.loads(decrypt(repo.arena["result"], IDENT.private_key))
+        assert result["meta"]["politicsSpectrumEnabled"] is expected, (consent, approved)
 
 
 def test_no_job_returns_none(tmp_path):

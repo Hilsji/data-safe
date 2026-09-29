@@ -44,6 +44,10 @@ class MongoRepo:
     def release_job(self, job_id: str) -> None:
         self.jobs.update_one({"_id": job_id}, {"$set": {"state": "queued", "lockedUntil": None}})
 
+    def approved_politics_model(self) -> str | None:
+        doc = self._db["settings"].find_one({"_id": "politics"})
+        return doc.get("approvedModelVersion") if doc else None
+
     def stale_upload_paths(self, older_than: datetime) -> Iterable[tuple[str, str]]:
         cursor = self.arenas.find(
             {"upload": {"$ne": None}, "createdAt": {"$lt": older_than}, "status": {"$in": ["uploading", "queued", "processing"]}},

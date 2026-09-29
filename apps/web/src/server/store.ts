@@ -3,7 +3,7 @@
  * Gespeichert wird nur, was docs/ARCHITEKTUR.md, Abschnitt 5.1 erlaubt – keine Inhalte, kein Klartext-Ergebnis.
  */
 import type { EncryptedBlob } from "@/crypto/ecies";
-import type { DurationMin, SourceApp } from "@/engine/types";
+import type { Category, DurationMin, SourceApp, Spectrum } from "@/engine/types";
 
 export type AgeBand = "u14" | "14-15" | "16+";
 export type ArenaStatus = "registered" | "uploading" | "queued" | "processing" | "ready" | "failed";
@@ -98,6 +98,47 @@ export interface ClassAggregateDoc {
   expiresAt: Date;
 }
 
+/** Aufnahmen des Projektteams mit Test-Accounts – NIE Schülerdaten */
+export interface CalibrationSegmentDoc {
+  id: string;
+  startSec: number;
+  endSec: number;
+  keyframe: string;
+  model: { category: Category; categoryConfidence: number; spectrum?: Spectrum; liked: boolean | null; replays: number | null };
+}
+
+export interface CalibrationDoc {
+  _id: string;
+  title: string;
+  app: SourceApp;
+  device: string;
+  modelVersion: string;
+  pipelineVersion: string;
+  segments: CalibrationSegmentDoc[];
+  createdBy: string;
+  createdAt: Date;
+}
+
+export interface RaterTagDoc {
+  _id: string; // `${recordingId}:${segmentId}:${raterId}`
+  recordingId: string;
+  segmentId: string;
+  raterId: string;
+  category: Category;
+  spectrum?: Spectrum;
+  boundaryOk: boolean;
+  likeOk: boolean;
+  replayOk: boolean;
+  taggedAt: Date;
+}
+
+export interface PoliticsApprovalDoc {
+  _id: "politics";
+  approvedModelVersion: string | null;
+  approvedAt: Date | null;
+  approvedBy: string | null;
+}
+
 export type Role = "teacher" | "rater" | "admin";
 
 export interface LoginTokenDoc {
@@ -143,6 +184,14 @@ export interface Store {
   insertUserSession(doc: UserSessionDoc): Promise<void>;
   getUserSession(hash: string): Promise<UserSessionDoc | null>;
   deleteUserSession(hash: string): Promise<void>;
+  insertCalibration(doc: CalibrationDoc): Promise<void>;
+  listCalibrations(): Promise<Omit<CalibrationDoc, "segments">[]>;
+  getCalibration(id: string): Promise<CalibrationDoc | null>;
+  deleteCalibration(id: string): Promise<void>;
+  upsertRaterTag(doc: RaterTagDoc): Promise<void>;
+  listRaterTags(filter: { recordingId?: string; raterId?: string }): Promise<RaterTagDoc[]>;
+  getPoliticsApproval(): Promise<PoliticsApprovalDoc>;
+  setPoliticsApproval(doc: PoliticsApprovalDoc): Promise<void>;
 }
 
 /** Leeres Aggregat mit den festen Bucket-Anzahlen */
@@ -186,6 +235,9 @@ export class MemoryStore implements Store {
   aggregates = new Map<string, ClassAggregateDoc>();
   loginTokens = new Map<string, LoginTokenDoc>();
   sessions = new Map<string, UserSessionDoc>();
+  calibrations = new Map<string, CalibrationDoc>();
+  raterTags = new Map<string, RaterTagDoc>();
+  approval: PoliticsApprovalDoc = { _id: "politics", approvedModelVersion: null, approvedAt: null, approvedBy: null };
 
   async getArena(id: string) {
     return structuredClone(this.arenas.get(id) ?? null);
@@ -281,5 +333,32 @@ export class MemoryStore implements Store {
   }
   async deleteUserSession(hash: string) {
     this.sessions.delete(hash);
+  }
+  async insertCalibration(doc: CalibrationDoc) {
+    this.calibrations.set(doc._id, structuredClone(doc));
+  }
+  async listCalibrations() {
+    return [...this.calibrations.values()].map(({ segments: _s, ...rest }) => structuredClone(rest));
+  }
+  async getCalibration(id: string) {
+    return structuredClone(this.calibrations.get(id) ?? null);
+  }
+  async deleteCalibration(id: string) {
+    this.calibrations.delete(id);
+    for (const [k, v] of this.raterTags) if (v.recordingId === id) this.raterTags.delete(k);
+  }
+  async upsertRaterTag(doc: RaterTagDoc) {
+    this.raterTags.set(doc._id, structuredClone(doc));
+  }
+  async listRaterTags(filter: { recordingId?: string; raterId?: string }) {
+    return [...this.raterTags.values()].filter(
+      (t) => (!filter.recordingId || t.recordingId === filter.recordingId) && (!filter.raterId || t.raterId === filter.raterId),
+    );
+  }
+  async getPoliticsApproval() {
+    return structuredClone(this.approval);
+  }
+  async setPoliticsApproval(doc: PoliticsApprovalDoc) {
+    this.approval = structuredClone(doc);
   }
 }

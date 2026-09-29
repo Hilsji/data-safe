@@ -79,14 +79,14 @@ export async function requestLogin(store: Store, cfg: AuthConfig, mailer: Mailer
 }
 
 /** Löst den Link ein und liefert den Sitzungs-Token für das Cookie (oder null). */
-export async function verifyLogin(store: Store, cfg: AuthConfig, token: string, now = new Date()): Promise<{ sessionToken: string; maxAgeSec: number } | null> {
+export async function verifyLogin(store: Store, cfg: AuthConfig, token: string, now = new Date()): Promise<{ sessionToken: string; maxAgeSec: number; roles: Role[] } | null> {
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
   const doc = await store.consumeLoginToken(sha256(token));
   if (!doc || doc.expiresAt <= now) return null;
   const sessionToken = randomBytes(32).toString("base64url");
   const maxAgeSec = cfg.sessionTtlHours * 3600;
   await store.insertUserSession({ _id: sha256(sessionToken), userId: doc.userId, roles: doc.roles, expiresAt: new Date(now.getTime() + maxAgeSec * 1000) });
-  return { sessionToken, maxAgeSec };
+  return { sessionToken, maxAgeSec, roles: doc.roles };
 }
 
 export interface User {

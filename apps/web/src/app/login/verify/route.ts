@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   }
   const result = await verifyLogin((await getDeps()).store, cfg, url.searchParams.get("token") ?? "");
   if (!result) return NextResponse.redirect(new URL("/lehrkraft?login=abgelaufen", cfg.appUrl));
-  const res = NextResponse.redirect(new URL("/lehrkraft", cfg.appUrl));
+  const res = NextResponse.redirect(new URL(result.roles.includes("teacher") ? "/lehrkraft" : "/admin", cfg.appUrl));
   res.cookies.set(SESSION_COOKIE, result.sessionToken, {
     httpOnly: true,
     secure: cfg.appUrl.startsWith("https://"),

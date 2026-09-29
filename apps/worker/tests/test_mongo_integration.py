@@ -45,6 +45,7 @@ def seed(repo, tmp_path, created=None):
 
 def test_full_job_against_mongo(repo, tmp_path):
     ident, path = seed(repo, tmp_path)
+    repo._db["settings"].insert_one({"_id": "politics", "approvedModelVersion": "fake"})
     videos = [Video("a_b", "Pasta in fünf Minuten", 8, category="food"), Video("c_d", "Wahlprogramm", 8, category="politics", spectrum="left")]
     frames, tokens = Scenario(items=videos).build()
     engines = Engines(FakeOcr(tokens), FakeLm(videos), None, "fake")

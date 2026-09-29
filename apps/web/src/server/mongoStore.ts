@@ -6,6 +6,9 @@ import type {
   ClassSessionDoc,
   ContributionTokenDoc,
   JobDoc,
+  CalibrationDoc,
+  PoliticsApprovalDoc,
+  RaterTagDoc,
   LoginTokenDoc,
   ParticipantDoc,
   Store,
@@ -49,6 +52,15 @@ export class MongoStore implements Store {
   private get sessions() {
     return this.db.collection<UserSessionDoc>("userSessions");
   }
+  private get calibrations() {
+    return this.db.collection<CalibrationDoc>("calibrationRecordings");
+  }
+  private get raterTags() {
+    return this.db.collection<RaterTagDoc>("raterTags");
+  }
+  private get settings() {
+    return this.db.collection<PoliticsApprovalDoc>("settings");
+  }
 
   async ensureIndexes() {
     await Promise.all([
@@ -65,6 +77,7 @@ export class MongoStore implements Store {
       ),
       this.participants.createIndex({ classId: 1 }),
       this.aggregates.createIndex({ classId: 1 }),
+      this.raterTags.createIndex({ recordingId: 1, raterId: 1 }),
     ]);
   }
 
@@ -170,5 +183,32 @@ export class MongoStore implements Store {
   }
   async deleteUserSession(hash: string) {
     await this.sessions.deleteOne({ _id: hash });
+  }
+  async insertCalibration(doc: CalibrationDoc) {
+    await this.calibrations.insertOne(doc);
+  }
+  listCalibrations() {
+    return this.calibrations.find({}, { projection: { segments: 0 } }).sort({ createdAt: -1 }).toArray();
+  }
+  getCalibration(id: string) {
+    return this.calibrations.findOne({ _id: id });
+  }
+  async deleteCalibration(id: string) {
+    await Promise.all([this.calibrations.deleteOne({ _id: id }), this.raterTags.deleteMany({ recordingId: id })]);
+  }
+  async upsertRaterTag(doc: RaterTagDoc) {
+    await this.raterTags.replaceOne({ _id: doc._id }, doc, { upsert: true });
+  }
+  listRaterTags(filter: { recordingId?: string; raterId?: string }) {
+    const q: Record<string, string> = {};
+    if (filter.recordingId) q.recordingId = filter.recordingId;
+    if (filter.raterId) q.raterId = filter.raterId;
+    return this.raterTags.find(q).toArray();
+  }
+  async getPoliticsApproval() {
+    return (await this.settings.findOne({ _id: "politics" })) ?? { _id: "politics" as const, approvedModelVersion: null, approvedAt: null, approvedBy: null };
+  }
+  async setPoliticsApproval(doc: PoliticsApprovalDoc) {
+    await this.settings.replaceOne({ _id: "politics" }, doc, { upsert: true });
   }
 }

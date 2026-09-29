@@ -39,6 +39,7 @@ class Repo(Protocol):
     def finish_job(self, job_id: str, state: str) -> None: ...
     def release_job(self, job_id: str) -> None: ...
     def stale_upload_paths(self, older_than: datetime) -> Iterable[tuple[str, str]]: ...
+    def approved_politics_model(self) -> str | None: ...
 
 
 @dataclass
@@ -85,7 +86,9 @@ def process_job(job: dict, repo: Repo, engines: Engines, *, fps: float = 2.0, sc
                 fps=fps,
                 duration_min=duration_min,
                 app=arena["app"],
-                politics_spectrum_enabled=bool(arena["consents"]["politicsSpectrum"]),
+                # Richtung nur mit Einwilligung UND für genau diese, im Admin-Tool freigegebene Modellversion (E6)
+                politics_spectrum_enabled=bool(arena["consents"]["politicsSpectrum"])
+                and repo.approved_politics_model() == engines.model_version,
                 recording_ended_at=_iso(arena.get("recordingEndedAt")),
                 transcript=transcript,
                 has_audio=has_audio,
