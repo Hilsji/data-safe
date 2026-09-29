@@ -1,0 +1,12 @@
+# NVIDIA-GPU für Ollama und Spracherkennung (nvidia-container-toolkit muss installiert sein)
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]

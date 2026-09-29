@@ -140,35 +140,40 @@ def boxes_to_mask(tokens: Sequence[OcrToken], layout: AppLayout, *, notification
 
 @dataclass
 class PersistentHandleTracker:
-    """Findet Texte, die in vielen Feed-Frames an derselben Stelle stehen (z. B. eigener Account-Name).
+    """Findet Texte, die in vielen VERSCHIEDENEN Videos an derselben Stelle stehen (z. B. eigener Account-Name).
 
-    Solche Texte gehören nicht zum Video, sondern zur Oberfläche bzw. zum Nutzer. Sie werden
-    zusätzlich geschwärzt – auch wenn sie nicht wie ein @handle aussehen.
+    Gezählt wird pro Kontext (= Video, erkannt am Creator), nicht pro Frame. Sonst würde die Caption
+    eines langen Videos fälschlich als „dauerhaft“ gelten. Solche Texte gehören zur Oberfläche bzw.
+    zum Nutzer und werden zusätzlich geschwärzt – auch wenn sie nicht wie ein @handle aussehen.
     """
 
-    threshold: float = 0.3
+    threshold: float = 0.5
+    min_contexts: int = 3
     grid: int = 20
-    frames: int = 0
-    counts: Counter = field(default_factory=Counter)
+    contexts: set = field(default_factory=set)
+    seen_in: dict = field(default_factory=dict)
 
     def _key(self, t: OcrToken) -> tuple[str, int, int]:
         cx, cy = t.box.center()
         return t.text.strip().lower(), int(cx * self.grid), int(cy * self.grid)
 
-    def observe(self, tokens: Sequence[OcrToken]) -> None:
-        self.frames += 1
-        for key in {self._key(t) for t in tokens}:
-            self.counts[key] += 1
+    def observe(self, tokens: Sequence[OcrToken], context: str | None) -> None:
+        if context is None:
+            return  # ohne erkennbares Video kein Beleg für „dauerhaft“
+        self.contexts.add(context)
+        for t in tokens:
+            self.seen_in.setdefault(self._key(t), set()).add(context)
 
-    def is_persistent(self, t: OcrToken, min_frames: int = 10) -> bool:
-        if self.frames < min_frames:
-            return False
-        return self.counts[self._key(t)] / self.frames >= self.threshold
+    def _persistent(self, key) -> bool:
+        n = len(self.contexts)
+        hits = len(self.seen_in.get(key, ()))
+        return n >= self.min_contexts and hits >= self.min_contexts and hits / n >= self.threshold
 
-    def persistent_texts(self, min_frames: int = 10) -> set[str]:
-        if self.frames < min_frames:
-            return set()
-        return {text for (text, _, _), n in self.counts.items() if n / self.frames >= self.threshold}
+    def is_persistent(self, t: OcrToken) -> bool:
+        return self._persistent(self._key(t))
+
+    def persistent_texts(self) -> set[str]:
+        return {key[0] for key in self.seen_in if self._persistent(key)}
 
 
 # ---------------------------------------------------------------------------

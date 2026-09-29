@@ -11,6 +11,9 @@
   --focus: #b3470d;
   --danger: #a4262c;
   --success: #2e6b30;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --grid: #e4e1da;
   color-scheme: light;
 }
 
@@ -26,6 +29,9 @@
     --focus: #ffb27a;
     --danger: #ff8a8f;
     --success: #8fd694;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --grid: #34383d;
     color-scheme: dark;
   }
 }
@@ -41,6 +47,9 @@
   --focus: #ffb27a;
   --danger: #ff8a8f;
   --success: #8fd694;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --grid: #34383d;
   color-scheme: dark;
 }
 

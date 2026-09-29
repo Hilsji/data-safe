@@ -1,0 +1,19 @@
+# Betrieb auf einem Strato-Server (V-Server/Dedicated) mit eigener Domain und automatischem HTTPS (Let's Encrypt).
+# Vorher in .env: DOMAIN=guide.meine-schule.de und SMTP_* für echte Magic-Link-Mails.
+services:
+  web:
+    ports: !reset []
+  mailpit:
+    profiles: ["dev"]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN fehlt in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on: [web]
+volumes:
+  caddy:

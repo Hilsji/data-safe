@@ -117,7 +117,7 @@ def run_pipeline(inp: PipelineInput, ocr: OcrEngine, lm: LanguageModel) -> dict:
         if not should_process(screen):
             off_feed_frames += 1
             continue  # Frame und Tokens werden nicht weiter verwendet
-        tracker.observe(tokens)
+        tracker.observe(tokens, creator_key(tokens, layout))
         feed_raw.append((frame, tokens))
 
     # 2./3. Eigenen Account ermitteln und schwärzen

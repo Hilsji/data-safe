@@ -5,7 +5,7 @@
  * Voraussetzungen (docs/ARCHITEKTUR.md, Abschnitt 8 + E6):
  *  - Einwilligung + freigegebenes Modell (meta.politicsSpectrumEnabled)
  *  - Politik-Anteil ≥ minShare UND ≥ minCount Politiksegmente mit Spektrum-Konfidenz ≥ minConfidence
- *  - ein Spektrum (≥ minPerSpectrum Segmente) mit mittlerem Engagement ≥ ratio × Politik-Durchschnitt
+ *  - ein Spektrum (≥ minPerSpectrum Segmente) vereint ≥ minShareOfEngagement des Politik-Engagements
  *  - Konfidenz per Bootstrap: Anteil der Resamples, in denen dasselbe Spektrum die Bedingung erfüllt
  */
 import { segmentEngagement } from "./engagement";
@@ -16,7 +16,8 @@ export interface PoliticsConfig {
   minShare: number;
   minCount: number;
   minConfidence: number;
-  ratio: number;
+  /** Anteil am Politik-Engagement, ab dem eine Richtung als „verengt“ gilt */
+  minShareOfEngagement: number;
   minPerSpectrum: number;
   bootstrapSamples: number;
   highConfidence: number;
@@ -28,7 +29,7 @@ export const DEFAULT_POLITICS_CONFIG: PoliticsConfig = {
   minShare: 0.15,
   minCount: 6,
   minConfidence: 0.7,
-  ratio: 1.5,
+  minShareOfEngagement: 0.6,
   minPerSpectrum: 3,
   bootstrapSamples: 1000,
   highConfidence: 0.9,
@@ -46,23 +47,25 @@ export type PoliticsFeedProfile =
       politicsShare: number;
       usableCount: number;
       spectrum: Spectrum;
-      ratio: number;
+      /** Anteil dieses Spektrums am Politik-Engagement */
+      share: number;
       confidence: "medium" | "high";
       support: number;
     };
 
 /**
- * Dominantes Spektrum: mittleres Engagement im Spektrum ≥ ratio × mittleres Politik-Engagement
- * und mindestens minPerSpectrum Segmente. Bei mehreren gewinnt das höchste Verhältnis.
+ * Dominantes Spektrum: Anteil am gesamten Politik-Engagement ≥ minShareOfEngagement
+ * und mindestens minPerSpectrum Segmente. Erfasst beide Wege in die Verengung:
+ * Der Feed zeigt (fast) nur noch eine Richtung, ODER du bleibst bei einer Richtung deutlich länger hängen.
+ * Rückgabe `share` = Anteil dieses Spektrums am Politik-Engagement (0–1).
  */
 export function dominantSpectrum(
   items: readonly { spectrum: Spectrum; engagement: number }[],
-  ratio: number,
+  minShareOfEngagement: number,
   minPerSpectrum: number,
-): { spectrum: Spectrum; ratio: number } | null {
-  if (items.length === 0) return null;
-  const mean = items.reduce((s, i) => s + i.engagement, 0) / items.length;
-  if (mean <= 0) return null;
+): { spectrum: Spectrum; share: number } | null {
+  const total = items.reduce((s, i) => s + i.engagement, 0);
+  if (total <= 0) return null;
   const sums = new Map<Spectrum, { sum: number; n: number }>();
   for (const i of items) {
     const e = sums.get(i.spectrum) ?? { sum: 0, n: 0 };
@@ -70,11 +73,11 @@ export function dominantSpectrum(
     e.n++;
     sums.set(i.spectrum, e);
   }
-  let best: { spectrum: Spectrum; ratio: number } | null = null;
+  let best: { spectrum: Spectrum; share: number } | null = null;
   for (const [spectrum, { sum, n }] of sums) {
     if (n < minPerSpectrum) continue;
-    const r = sum / n / mean;
-    if (r >= ratio && (best === null || r > best.ratio)) best = { spectrum, ratio: r };
+    const share = sum / total;
+    if (share >= minShareOfEngagement && (best === null || share > best.share)) best = { spectrum, share };
   }
   return best;
 }
@@ -98,21 +101,21 @@ export function buildPoliticsProfile(
     return { status: "insufficient_data", ...base };
   }
   const items = usable.map((s) => ({ spectrum: s.spectrum, engagement: Math.max(segmentEngagement(s), 0) }));
-  const observed = dominantSpectrum(items, config.ratio, config.minPerSpectrum);
+  const observed = dominantSpectrum(items, config.minShareOfEngagement, config.minPerSpectrum);
   if (!observed) return { status: "no_narrowing", ...base };
 
   const rng = createRng(config.seed);
   let hits = 0;
   for (let b = 0; b < config.bootstrapSamples; b++) {
     const resample = Array.from({ length: items.length }, () => items[Math.floor(rng() * items.length)]!);
-    if (dominantSpectrum(resample, config.ratio, config.minPerSpectrum)?.spectrum === observed.spectrum) hits++;
+    if (dominantSpectrum(resample, config.minShareOfEngagement, config.minPerSpectrum)?.spectrum === observed.spectrum) hits++;
   }
   const support = hits / config.bootstrapSamples;
   if (support >= config.highConfidence) {
-    return { status: "narrowed", ...base, spectrum: observed.spectrum, ratio: observed.ratio, confidence: "high", support };
+    return { status: "narrowed", ...base, spectrum: observed.spectrum, share: observed.share, confidence: "high", support };
   }
   if (support >= config.mediumConfidence) {
-    return { status: "narrowed", ...base, spectrum: observed.spectrum, ratio: observed.ratio, confidence: "medium", support };
+    return { status: "narrowed", ...base, spectrum: observed.spectrum, share: observed.share, confidence: "medium", support };
   }
   return { status: "unclear", ...base, candidate: observed.spectrum, support };
 }

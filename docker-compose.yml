@@ -1,0 +1,79 @@
+# Schul-Box: alles läuft auf einem Rechner im Schulnetz.
+#   docker compose up -d                      → CPU-Betrieb
+#   docker compose -f docker-compose.yml -f compose.gpu.yml up -d     → mit NVIDIA-GPU
+#   docker compose -f docker-compose.yml -f compose.strato.yml up -d  → Strato-Server mit HTTPS
+name: guide-me
+
+services:
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile, secrets: [extra_ca] }
+    restart: unless-stopped
+    env_file: [{ path: .env, required: false }]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on: [mongo]
+
+  worker:
+    build: { context: apps/worker, secrets: [extra_ca] }
+    restart: unless-stopped
+    env_file: [{ path: .env, required: false }]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      OLLAMA_URL: http://ollama:11434
+      SCRATCH_DIR: /scratch
+      HF_HOME: /models/hf
+      PADDLE_HOME: /models/paddle
+    volumes:
+      - uploads:/data/uploads
+      - models:/models
+    # Zwischendateien (Audio) nur im Arbeitsspeicher
+    tmpfs:
+      - /scratch:size=2g,uid=10001,mode=0700
+    depends_on: [mongo, ollama]
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo:/data/db
+    # kein Port nach außen – nur web und worker greifen zu
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+  # Lädt die Modelle einmalig herunter (danach offline nutzbar)
+  ollama-init:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull ${OLLAMA_TEXT_MODEL:-qwen2.5:7b-instruct} && ollama pull ${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}"]
+    depends_on: [ollama]
+    restart: "no"
+
+  # Test-Postfach für Magic-Link-Mails (Lehrkräfte/Admins); Weboberfläche auf Port 8025
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+
+secrets:
+  # Nur nötig in Netzen mit TLS-Inspektion: EXTRA_CA_CERT=/pfad/zum/zertifikat.crt
+  extra_ca:
+    file: ${EXTRA_CA_CERT:-/dev/null}
+
+volumes:
+  # Upload-Dateien liegen nur bis zum Ende der Auswertung hier. Empfehlung: Docker-Datenverzeichnis auf einer
+  # verschlüsselten Partition (LUKS/BitLocker) betreiben.
+  uploads:
+  mongo:
+  ollama:
+  models:

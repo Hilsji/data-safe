@@ -40,7 +40,7 @@ describe("buildPoliticsProfile", () => {
     if (p.status === "narrowed") {
       expect(p.spectrum).toBe("center_left");
       expect(p.confidence).toBe("high");
-      expect(p.ratio).toBeGreaterThanOrEqual(DEFAULT_POLITICS_CONFIG.ratio);
+      expect(p.share).toBeGreaterThanOrEqual(DEFAULT_POLITICS_CONFIG.minShareOfEngagement);
     }
   });
 
@@ -79,6 +79,19 @@ describe("buildPoliticsProfile", () => {
   });
 });
 
+describe("Verengung, wenn der Feed nur noch eine Richtung zeigt", () => {
+  it("erkennt einen einseitigen Feed, auch bei gleichmäßigem Zuschauen", () => {
+    const segs = [...filler(0, 20), ...Array.from({ length: 8 }, (_, i) => politicsSegment(20 + i, "right", 15))];
+    const p = buildPoliticsProfile(result(segs));
+    expect(p.status).toBe("narrowed");
+    if (p.status === "narrowed") {
+      expect(p.spectrum).toBe("right");
+      expect(p.share).toBe(1);
+      expect(p.confidence).toBe("high");
+    }
+  });
+});
+
 describe("dominantSpectrum", () => {
   it("braucht eine Mindestanzahl je Spektrum", () => {
     const items = [
@@ -87,7 +100,7 @@ describe("dominantSpectrum", () => {
       { spectrum: "right" as const, engagement: 1 },
       { spectrum: "right" as const, engagement: 1 },
     ];
-    expect(dominantSpectrum(items, 1.5, 3)).toBeNull();
-    expect(dominantSpectrum(items, 1.5, 1)?.spectrum).toBe("left");
+    expect(dominantSpectrum(items, 0.6, 3)).toBeNull();
+    expect(dominantSpectrum(items, 0.6, 1)?.spectrum).toBe("left");
   });
 });

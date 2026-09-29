@@ -27,14 +27,17 @@ const b64Key = z
   .string()
   .regex(/^[A-Za-z0-9+/]{43}=$/, "öffentlicher Schlüssel muss 32 Byte (base64) sein");
 
-export const encryptedBlobSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    ephemeralPublicKey: b64Key,
-    iv: z.string().regex(/^[A-Za-z0-9+/]{16}$/),
-    ciphertext: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/).max(64_000),
-  })
-  .strict();
+export const encryptedBlobSchemaFor = (maxChars: number) =>
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      ephemeralPublicKey: b64Key,
+      iv: z.string().regex(/^[A-Za-z0-9+/]{16}$/),
+      ciphertext: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/).max(maxChars),
+    })
+    .strict();
+/** Client-Zustand (Baseline, Merkwort) ist klein */
+export const encryptedBlobSchema = encryptedBlobSchemaFor(64_000);
 
 export const registerSchema = z
   .object({

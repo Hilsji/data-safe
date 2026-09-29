@@ -59,7 +59,7 @@ Der neue Ablauf verträgt sich nicht mit zwei Regeln aus dem Auftrag und einem L
 **Vorschlag: „So nah am Gerät wie möglich, so kurz wie möglich, danach unlesbar für alle außer dem Schüler.“**
 
 1. **Die Verarbeitung läuft im Schulnetz, nicht in der Cloud.** Standardbetrieb ist die „Schul-Box“: der Rechner der Lehrkraft oder ein Schulserver mit Docker. Die Aufnahme verlässt das Schul-WLAN nicht. Strato ist nur ein optionaler zweiter Betriebsmodus mit gleichem Code und AVV mit Strato.
-2. **Die Rohaufnahme wird sofort nach der Analyse gelöscht.** Scheitert die Analyse, wird sie spätestens nach 24 h gelöscht. Es gibt keine Backups des Upload-Verzeichnisses. Zwischenprodukte (Frames, Transkript) liegen nur in einem RAM-Dateisystem (tmpfs).
+2. **Die Rohaufnahme wird sofort nach der Analyse gelöscht.** Scheitert die Analyse, wird sie spätestens nach 24 h gelöscht. Es gibt keine Backups des Upload-Verzeichnisses. Die Upload-Datei liegt auf der Platte (für 25 Aufnahmen à mehrere GB reicht der Arbeitsspeicher nicht) – deshalb **Docker-Datenverzeichnis auf verschlüsselter Partition** (LUKS/BitLocker). Frames werden direkt aus ffmpeg in den Arbeitsspeicher gelesen, das Audio für die Spracherkennung liegt kurz in einem RAM-Dateisystem (tmpfs).
 3. **Ende-zu-Ende-verschlüsseltes Ergebnis.** Die Unique ID ist ein Schlüssel, den das Gerät erzeugt. Der Server bekommt nur den öffentlichen Teil und speichert das Ergebnis ausschließlich verschlüsselt. Weder Lehrkraft noch Admin noch Betreiber können es lesen (Details in Abschnitt 5.2).
 4. **Die Politik-Analyse ist eine gesonderte, ausdrückliche Einwilligung** nach Art. 9 (2) a DSGVO, unter 16 zusätzlich durch die Sorgeberechtigten. Ohne diese Einwilligung klassifiziert die Pipeline Politikvideos nur als „Politik“, ohne Spektrum.
 5. **Keine Drittanbieter-KI.** OCR, Spracherkennung und Sprachmodell laufen lokal. Es geht nichts an OpenAI, Anthropic, Google o. Ä.
@@ -125,7 +125,7 @@ flowchart LR
     Q[(MongoDB<br/>Sessions, Jobs,<br/>verschlüsselte Ergebnisse,<br/>Klassen-Zähler)]
     W[worker: Python<br/>ffmpeg · OpenCV · OCR ·<br/>faster-whisper]
     LLM[llm: Ollama<br/>lokales Vision-/Sprachmodell]
-    TMP[(tmpfs: Upload & Frames<br/>sofort gelöscht)]
+    TMP[(Upload-Volume, verschlüsselte Platte<br/>nach Auswertung gelöscht)]
     WEB --- Q
     W --- Q
     W --- LLM
@@ -146,7 +146,7 @@ flowchart LR
 |---|---|
 | Frontend | **Next.js 15 (App Router) + TypeScript strict**, PWA via `@serwist/next`, Tailwind, `next-intl` (de zuerst), eigene barrierefreie SVG-Diagramme mit Tabellen-Fallback |
 | Kryptografie im Client | WebCrypto: X25519/ECDH (Fallback P-256) + HKDF + AES-GCM, gekapselt in `src/crypto/` |
-| Upload | `tus-js-client` ↔ `@tus/server` im Next.js-Backend; Chunk-Ziel ist tmpfs |
+| Upload | eigenes, schlankes Protokoll mit Offset (`/api/arena/:id/upload`, fortsetzbar, auch Streaming); Ziel ist das Upload-Volume |
 | Auth Lehrkraft/Admin | **Magic Link** über Auth.js (E-Mail-Provider). Lokal läuft Mailpit (Mails im Browser ansehen), auf Strato der Strato-SMTP. Rollen: `teacher`, `rater`, `admin` |
 | Datenbank | MongoDB 7: lokal als Docker-Container, auf Strato selbst gehostet oder Atlas EU (Frankfurt). Zugriff über den offiziellen Treiber + `zod` |
 | Job-Queue | MongoDB-basiert (Collection `jobs`, atomisches `findOneAndUpdate`), kein Redis nötig |
@@ -194,7 +194,7 @@ interface EncryptedBlob {
 interface Job {                        // Verarbeitungsauftrag, enthält keine Inhalte
   _id: string;
   arenaSessionId: string;
-  uploadPath: string;                 // auf tmpfs
+  uploadPath: string;                 // im Upload-Volume
   state: "queued" | "running" | "done" | "failed";
   stage?: "segment" | "ocr_asr" | "classify" | "signals" | "quiz" | "encrypt";
   progress: number;                   // 0–1, für die Fortschrittsanzeige
@@ -323,14 +323,14 @@ interface ContentQuestion {
 
 | Stufe | Verfahren | Ausgabe | Validierung |
 |---|---|---|---|
-| 0 Normalisieren | ffmpeg: auf die gewählte Dauer schneiden, 2 fps / 540p extrahieren, Audio 16 kHz mono | Frames, WAV (tmpfs) | – |
+| 0 Normalisieren | ffmpeg: auf die gewählte Dauer schneiden, 2 fps / 540p extrahieren, Audio 16 kHz mono | Frames (RAM), WAV (tmpfs) | – |
 | 1 TikTok-Erkennung | Layout-Merkmale (rechte Aktionsleiste, untere Leiste) per Template-Matching; fremde Frames (Home-Bildschirm, Benachrichtigungen, andere Apps) **werden verworfen, nicht analysiert** | Maske pro Frame | Präzision/Recall auf Kalibrieraufnahmen |
 | 2 Segmentierung | vertikale Wischbewegung (optischer Fluss) + harter Bildwechsel + Wechsel des Creator-Namens (OCR) | Segmente mit Start/Ende | Segmentierungs-F1 ≥ 0,9 als Ziel |
 | 3 Signale | Skip = < 2 s · Like = Farbwechsel des Herz-Icons (Template-Matching, rote Pixel) · Loop = Wiedererscheinen des Startframes (pHash) · Werbung = OCR „Gesponsert“/„Anzeige“ | `liked`, `replays`, `kind` | F1 je Signal; unsichere Werte werden zu `null` und **nicht** als 0 gewertet |
 | 4 Inhalt | OCR (Caption, Hashtags, Einblendungen) · Transkript (faster-whisper) · 1–3 Keyframes → Vision-Modell-Beschreibung | Text-Bündel pro Segment | Stichproben |
 | 5 Klassifikation | lokales LLM mit festem Prompt + Few-Shot, Ausgabe als JSON-Schema (Kategorie, Konfidenz; Spektrum nur mit Einwilligung) | `category`, `spectrum` | **Kappa Mensch–Modell**, Bias-Audit je Spektrum |
 | 6 Quiz | siehe Abschnitt 7 | `QuizDefinition` | Beleg-Prüfung, Längen-Bias-Check der Antwortoptionen |
-| 7 Abschluss | Ergebnis verschlüsseln → speichern → **Rohdaten und tmpfs löschen** → Job `done` | `EncryptedBlob` | Test: Nach `done` existieren keine Dateien mehr |
+| 7 Abschluss | Ergebnis verschlüsseln → speichern → **Upload-Datei löschen** (Audio-tmpfs wird sofort geleert) → Job `done` | `EncryptedBlob` | Test: Nach `done` existieren keine Dateien mehr |
 
 **Laufzeit:** Auf einem Laptop ohne GPU schätze ich 15 min Aufnahme → 5–15 min Verarbeitung und 45 min → 25–70 min. Das ist eine **ungeprüfte Annahme**, Spike S2 misst sie. Eine Klasse mit 25 Schülern braucht wahrscheinlich eine GPU in der Schul-Box oder ein Quiz erst in der Folgestunde. → Das wird zu E4.
 
@@ -361,7 +361,7 @@ interface ContentQuestion {
 - **„Womit dich der Feed gefüttert hat“:** Anteil der Kategorien an den gezeigten Segmenten.
 - **„Wo du am längsten hängen geblieben bist“:** Engagement_k = Σ(w₁·Sehdauer-Anteil + w₂·Like + w₃·Loops − w₄·Skip) / Anzahl in k. Ohne Pool gibt es keine Pool-Normierung mehr. Stattdessen wird **auf das, was der Feed angeboten hat**, normiert. Unsichere Signale (`null`) fließen nicht ein.
 - **Verengungskurve:** normierte Shannon-Entropie im gleitenden Fenster (10 Segmente) über die Zeit. Die Anzeige vergleicht erstes und letztes Drittel.
-- **Politik-Feed-Profil:** Voraussetzungen sind die Art.-9-Einwilligung, ein freigegebenes Modell (E6), ein Politik-Anteil ≥ 15 % **und** ≥ 6 Politiksegmente mit Spektrum-Konfidenz ≥ 0,7 **und** ein Spektrum mit ≥ 1,5 × durchschnittlichem Politik-Engagement. Die Konfidenz kommt aus einem Bootstrap (≥ 90 % „hoch“, ≥ 70 % „mittel“, sonst „nicht eindeutig“). Ausgabe nur als Feed-Beschreibung, nie als Gesinnung.
+- **Politik-Feed-Profil:** Voraussetzungen sind die Art.-9-Einwilligung, ein freigegebenes Modell (E6), ein Politik-Anteil ≥ 15 % **und** ≥ 6 Politiksegmente mit Spektrum-Konfidenz ≥ 0,7 **und** ein Spektrum (≥ 3 Segmente), auf das ≥ 60 % des Politik-Engagements entfallen. *(Geändert gegenüber v2: Ohne kuratierten Pool gibt es keinen neutralen Pool-Durchschnitt. Der Vergleich mit dem Politik-Durchschnitt hätte einen Feed, der nur noch eine Richtung zeigt, fälschlich als „nicht verengt“ gewertet.)* Die Konfidenz kommt aus einem Bootstrap (≥ 90 % „hoch“, ≥ 70 % „mittel“, sonst „nicht eindeutig“). Ausgabe nur als Feed-Beschreibung, nie als Gesinnung. **Die Schwellenwerte sind Setzungen, keine validierten Grenzwerte, und vor dem Einsatz fachlich zu prüfen.**
 - **Signale aus dem Arbeitspapier (Tab. 12, Stufe 2):** Anteil der Kategorien „manosphere“ und „sexualized“. Wird er auffällig, folgt schamfrei die passende Aufklärungseinheit aus der Interventionsleiter (Tab. 13, Stufe 2/3), z. B. „Wie der Funnel funktioniert“ (altersgestuft, siehe E3).
 - **„Blase platzen lassen“:** TikTok-Neustart-Option + nicht personalisierter Feed (DSA Art. 38), gezielt entfolgen, „Nicht interessiert“ – als Schritt-für-Schritt-Anleitung, belegt mit Kap. 11.2 des Arbeitspapiers.
 
@@ -399,7 +399,7 @@ interface ContentQuestion {
 - **S2 Pipeline-Machbarkeit:** 3 Kalibrieraufnahmen (Test-Account des Projektteams). Gemessen werden Segmentierungs-F1, Like/Loop-Erkennung und die Laufzeit CPU vs. GPU.
 - **S3 TikTok-Zugang:** Web ohne Login (tiktok.com/foryou) vs. App mit neuem Test-Account vs. eigener Account. Was sehen Schüler ohne Login, und wie lange?
 
-**Laufend:** Unit-Tests für d′, Entropie, Engagement, Kappa, Bootstrap, Quiz-Ziehung (Drittel, ≥ 3 s, feste Anzahl), Verschlüsselung (Round-Trip, falscher Schlüssel schlägt fehl), Aggregation (Politik wird abgewiesen) · `pytest` für jede Pipeline-Stufe mit synthetischen Videos (ffmpeg-generierte Testclips mit simuliertem Wischen und Herz-Icon) · **Datenschutz-Test:** Nach Job-Ende sind Upload und tmpfs leer, die DB enthält keinen Klartext · E2E mit einer synthetischen Aufnahme · axe auf allen Routen.
+**Laufend:** Unit-Tests für d′, Entropie, Engagement, Kappa, Bootstrap, Quiz-Ziehung (Drittel, ≥ 3 s, feste Anzahl), Verschlüsselung (Round-Trip, falscher Schlüssel schlägt fehl), Aggregation (Politik wird abgewiesen) · `pytest` für jede Pipeline-Stufe mit synthetischen Videos (ffmpeg-generierte Testclips mit simuliertem Wischen und Herz-Icon) · **Datenschutz-Test:** Nach Job-Ende ist die Upload-Datei gelöscht, die DB enthält keinen Klartext · E2E mit einer synthetischen Aufnahme · axe auf allen Routen.
 
 **Seed-Daten:** Statt 60 Pool-Videos liefere ich **60 synthetische Test-Segmente**. Sie werden per ffmpeg erzeugt: TikTok-ähnliches Layout, Text, gesprochener Satz per lokalem TTS, simuliertes Wischen und Liken. Damit lässt sich die komplette Pipeline ohne echte TikTok-Inhalte testen. Dazu kommt die Ablenker-Bank.
 

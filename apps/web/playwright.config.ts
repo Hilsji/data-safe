@@ -14,6 +14,6 @@ export default defineConfig({
     port,
     reuseExistingServer: true,
     timeout: 120_000,
-    env: { UPLOAD_DIR: "./data/e2e-uploads" },
+    env: { UPLOAD_DIR: "./data/e2e-uploads", ENABLE_TEST_ROUTES: "1" },
   },
 });

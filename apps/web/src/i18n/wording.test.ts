@@ -35,7 +35,9 @@ describe("Wording-Pflicht", () => {
   it("enthält keine Ziffern in Fließtexten außer Zeit-/Alters-/Datenschutzangaben (Zahlen laufen über <Fact>)", () => {
     const allowed = /^(15|30|45|5|7|8|13|14|16|2|3|9|6)$/;
     for (const [path, text] of strings) {
-      for (const n of text.match(/\d+/g) ?? []) {
+      // Gesetzesverweise („Art. 38“) sind keine Statistiken
+      const withoutLaw = text.replace(/Art\. \d+/g, "");
+      for (const n of withoutLaw.match(/\d+/g) ?? []) {
         expect(allowed.test(n), `${path}: „${n}“ – Zahl ohne Quelle? Über <Fact> einbinden`).toBe(true);
       }
     }

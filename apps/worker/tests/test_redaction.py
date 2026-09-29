@@ -107,17 +107,35 @@ class TestFrameMasking:
 
 
 class TestPersistentHandles:
-    def test_detects_own_account_at_fixed_position(self):
-        tracker = PersistentHandleTracker()
-        own = OcrToken("jonas_privat", Box(0.8, 0.9, 0.15, 0.03))
-        for i in range(20):
-            tracker.observe([own, OcrToken(f"Video {i}", Box(0.1, 0.5, 0.5, 0.05))])
-        assert tracker.is_persistent(own)
-        assert "jonas_privat" in tracker.persistent_texts()
-        assert not tracker.is_persistent(OcrToken("Video 3", Box(0.1, 0.5, 0.5, 0.05)))
+    own = OcrToken("jonas_privat", Box(0.8, 0.9, 0.15, 0.03))
 
-    def test_needs_enough_frames(self):
+    def test_detects_own_account_across_videos(self):
         tracker = PersistentHandleTracker()
-        own = OcrToken("x", Box(0.8, 0.9, 0.1, 0.03))
-        tracker.observe([own])
-        assert not tracker.is_persistent(own)
+        for video in range(6):
+            for _ in range(10):
+                tracker.observe([self.own, OcrToken(f"Caption {video}", Box(0.1, 0.85, 0.5, 0.05))], f"creator{video}")
+        assert tracker.is_persistent(self.own)
+        assert "jonas_privat" in tracker.persistent_texts()
+        assert not tracker.is_persistent(OcrToken("Caption 3", Box(0.1, 0.85, 0.5, 0.05)))
+
+    def test_long_video_caption_is_not_persistent(self):
+        """Ein 5-minütiges Video darf seine Caption nicht verlieren."""
+        tracker = PersistentHandleTracker()
+        long_caption = OcrToken("Ganze Doku über Vulkane", Box(0.1, 0.85, 0.5, 0.05))
+        for _ in range(600):
+            tracker.observe([long_caption], "doku")
+        for v in range(3):
+            tracker.observe([OcrToken(f"kurz {v}", Box(0.1, 0.85, 0.5, 0.05))], f"c{v}")
+        assert not tracker.is_persistent(long_caption)
+
+    def test_needs_several_videos(self):
+        tracker = PersistentHandleTracker()
+        tracker.observe([self.own], "a")
+        tracker.observe([self.own], "b")
+        assert not tracker.is_persistent(self.own)
+
+    def test_frames_without_context_are_ignored(self):
+        tracker = PersistentHandleTracker()
+        for _ in range(50):
+            tracker.observe([self.own], None)
+        assert tracker.persistent_texts() == set()
